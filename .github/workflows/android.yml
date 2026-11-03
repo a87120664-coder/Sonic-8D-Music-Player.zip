@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "Sonic-8D-Music-Player.zip"
+      - "**.zip"
       - ".github/workflows/android.yml"
 
 jobs:
@@ -22,24 +22,49 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Extract Android project ZIP
+      - name: Find and extract ZIP
+        shell: bash
         run: |
-          test -f Sonic-8D-Music-Player.zip
+          echo "Repository files:"
+          ls -la
+
+          ZIP_FILE="$(find . -type f -iname '*.zip' -not -path './.git/*' -print -quit)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP file not found!"
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
           mkdir -p project
-          unzip -o Sonic-8D-Music-Player.zip -d project
+          unzip -o "$ZIP_FILE" -d project
+
+      - name: Find Android project
+        shell: bash
+        run: |
+          PROJECT_DIR="$(find "$PWD/project" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android Gradle project not found inside ZIP!"
+            find project -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT_DIR"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
-        working-directory: project
-        run: gradle assembleDebug
+      - name: Build APK
+        run: gradle -p "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Sonic-8D-Music-Player-debug-apk
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          name: Sonic-8D-Music-Player-APK
+          path: project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           
